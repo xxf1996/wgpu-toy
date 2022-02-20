@@ -11,6 +11,7 @@ struct State {
   queue: wgpu::Queue,
   config: wgpu::SurfaceConfiguration,
   size: winit::dpi::PhysicalSize<u32>,
+  background: wgpu::Color,
 }
 
 impl State {
@@ -35,12 +36,20 @@ impl State {
       height: size.height,
       present_mode: wgpu::PresentMode::Fifo,
     };
+    let background = wgpu::Color {
+      r: 1.0,
+      g: 0.0,
+      b: 0.0,
+      a: 1.0,
+    };
+    surface.configure(&device, &config); // 初始化时一定要进行配置
     State {
       size,
       surface,
       device,
       queue,
-      config
+      config,
+      background
     }
   }
 
@@ -54,7 +63,22 @@ impl State {
   }
 
   pub fn input(&mut self, event: &WindowEvent) -> bool {
-    false
+    match event {
+      WindowEvent::CursorMoved {
+        device_id: _,
+        position: winit::dpi::PhysicalPosition { x, y },
+        modifiers: _,
+      } => {
+        self.background = wgpu::Color {
+          r: x / (self.size.width as f64),
+          g: y / (self.size.height as f64),
+          b: 0.0,
+          a: 1.0
+        }; // 根据鼠标位置改变背景颜色
+        true
+      },
+      _ => false
+    }
   }
 
   fn update(&mut self) {
@@ -74,12 +98,7 @@ impl State {
           view: &view,
           resolve_target: None,
           ops: wgpu::Operations {
-            load: wgpu::LoadOp::Clear(wgpu::Color {
-              r: 0.2,
-              g: 0.5,
-              b: 0.8,
-              a: 1.0,
-            }),
+            load: wgpu::LoadOp::Clear(self.background),
             store: true,
           }
         }],
@@ -124,9 +143,21 @@ fn main() {
         },
         _ => {}
       }
-    }
+    },
+    Event::RedrawRequested(window_id) if window_id == window.id() => {
+      state.update();
+      match state.render() {
+        Ok(_) => {},
+        Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
+        Err(wgpu::SurfaceError::OutOfMemory) => {
+          *control_flow = ControlFlow::Exit;
+        },
+        Err(e) => eprintln!("{:?}", e)
+      }
+    },
+    Event::MainEventsCleared => {
+      window.request_redraw();
+    },
     _ => {}
   });
-
-  todo!();
 }
