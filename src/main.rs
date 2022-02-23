@@ -13,6 +13,8 @@ struct State {
   size: winit::dpi::PhysicalSize<u32>,
   background: wgpu::Color,
   render_pipeline: wgpu::RenderPipeline,
+  render_pipeline2: wgpu::RenderPipeline,
+  render_pipeline_default: bool,
 }
 
 impl State {
@@ -46,6 +48,10 @@ impl State {
     let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
       label: Some("Shader"),
       source: wgpu::ShaderSource::Wgsl(include_str!("test.wgsl").into())
+    });
+    let shader2 = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+      label: Some("Shader"),
+      source: wgpu::ShaderSource::Wgsl(include_str!("test2.wgsl").into())
     });
     let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
       label: Some("Render Pipeline Layout"),
@@ -86,7 +92,40 @@ impl State {
       },
       multiview: None
     });
-    // let render_pipeline = todo!();
+    let render_pipeline2 = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+      label: Some("Render Pipeline"),
+      layout: Some(&render_pipeline_layout),
+      vertex: wgpu::VertexState {
+        module: &shader2,
+        entry_point: "vs_main",
+        buffers: &[]
+      },
+      fragment: Some(wgpu::FragmentState {
+        module: &shader2,
+        entry_point: "fs_main",
+        targets: &[wgpu::ColorTargetState {
+          format: config.format,
+          blend: Some(wgpu::BlendState::REPLACE),
+          write_mask: wgpu::ColorWrites::ALL,
+        }],
+      }),
+      primitive: wgpu::PrimitiveState { // 图元设置，如何生成三角
+        topology: wgpu::PrimitiveTopology::TriangleList, // 每三个顶点为一个三角形
+        strip_index_format: None,
+        front_face: wgpu::FrontFace::Ccw, // 逆时针为正面
+        cull_mode: Some(wgpu::Face::Back), // 背面隐藏
+        polygon_mode: wgpu::PolygonMode::Fill, // 填充着色
+        unclipped_depth: false,
+        conservative: false
+      },
+      depth_stencil: None, // 深度模板缓存
+      multisample: wgpu::MultisampleState {
+        count: 1,
+        mask: !0,
+        alpha_to_coverage_enabled: false,
+      },
+      multiview: None
+    });
     surface.configure(&device, &config); // 初始化时一定要进行配置
     State {
       size,
@@ -95,7 +134,9 @@ impl State {
       queue,
       config,
       background,
-      render_pipeline
+      render_pipeline,
+      render_pipeline2,
+      render_pipeline_default: true
     }
   }
 
@@ -121,6 +162,17 @@ impl State {
           b: 0.0,
           a: 1.0
         }; // 根据鼠标位置改变背景颜色
+        true
+      },
+      WindowEvent::KeyboardInput {
+        input: KeyboardInput {
+          state: ElementState::Pressed,
+          virtual_keycode: Some(VirtualKeyCode::Space),
+          ..
+        },
+        ..
+      } => {
+        self.render_pipeline_default = !self.render_pipeline_default; // 切换渲染管线状态
         true
       },
       _ => false
@@ -150,7 +202,11 @@ impl State {
         }],
         depth_stencil_attachment: None
       });
-      render_pass.set_pipeline(&self.render_pipeline);
+      render_pass.set_pipeline(if let true = self.render_pipeline_default {
+        &self.render_pipeline
+      } else {
+        &self.render_pipeline2
+      }); // 根据状态切换渲染管线
       render_pass.draw(0..3, 0..1); // 指定顶点数和实例树数
     }
 
