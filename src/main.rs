@@ -1,8 +1,15 @@
+mod shape;
+
 use winit::{
   event::*,
   event_loop::{ControlFlow, EventLoop},
   window::WindowBuilder,
   window::Window,
+};
+use wgpu::util::DeviceExt;
+use shape::{
+  Vertex,
+  get_circle
 };
 
 struct State {
@@ -15,7 +22,16 @@ struct State {
   render_pipeline: wgpu::RenderPipeline,
   render_pipeline2: wgpu::RenderPipeline,
   render_pipeline_default: bool,
+  vertex_buffer: wgpu::Buffer,
+  index_buffer: wgpu::Buffer,
+  index_num: u32,
 }
+
+// const VERTICES: &[Vertex] = &[
+//   Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },
+//   Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] },
+//   Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },
+// ];
 
 impl State {
   pub async fn new(window: &Window) -> Self {
@@ -47,7 +63,7 @@ impl State {
     };
     let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
       label: Some("Shader"),
-      source: wgpu::ShaderSource::Wgsl(include_str!("test.wgsl").into())
+      source: wgpu::ShaderSource::Wgsl(include_str!("shader-buffer.wgsl").into())
     });
     let shader2 = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
       label: Some("Shader"),
@@ -64,7 +80,9 @@ impl State {
       vertex: wgpu::VertexState {
         module: &shader,
         entry_point: "vs_main",
-        buffers: &[]
+        buffers: &[
+          Vertex::desc()
+        ]
       },
       fragment: Some(wgpu::FragmentState {
         module: &shader,
@@ -126,6 +144,17 @@ impl State {
       },
       multiview: None
     });
+    let buffer_info = get_circle(16, 0.5, size.width as f32 / size.height as f32);
+    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+      label: Some("Vertex Buffer"),
+      usage: wgpu::BufferUsages::VERTEX,
+      contents: bytemuck::cast_slice(&buffer_info.vertices),
+    });
+    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+      label: Some("Index Buffer"),
+      usage: wgpu::BufferUsages::INDEX,
+      contents: bytemuck::cast_slice(&buffer_info.indices),
+    });
     surface.configure(&device, &config); // 初始化时一定要进行配置
     State {
       size,
@@ -136,7 +165,10 @@ impl State {
       background,
       render_pipeline,
       render_pipeline2,
-      render_pipeline_default: true
+      render_pipeline_default: true,
+      vertex_buffer,
+      index_buffer,
+      index_num: buffer_info.indices.len() as u32
     }
   }
 
@@ -207,7 +239,9 @@ impl State {
       } else {
         &self.render_pipeline2
       }); // 根据状态切换渲染管线
-      render_pass.draw(0..3, 0..1); // 指定顶点数和实例树数
+      render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+      render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16); // 指定索引缓冲
+      render_pass.draw_indexed(0..self.index_num, 0, 0..1); // 指定顶点数和实例数
     }
 
     self.queue.submit(std::iter::once(encoder.finish()));
