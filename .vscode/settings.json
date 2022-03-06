@@ -1,0 +1,3 @@
+{
+  "rust-client.disableRustup": true // https://stackoverflow.com/questions/60816886/how-do-i-solve-couldnt-start-client-rust-language-server-with-the-rust-vs-cod
+}
