@@ -26,6 +26,7 @@ struct State {
   vertex_buffer: wgpu::Buffer,
   index_buffer: wgpu::Buffer,
   index_num: u32,
+  texture_bind_group: wgpu::BindGroup
 }
 
 // const VERTICES: &[Vertex] = &[
@@ -64,15 +65,57 @@ impl State {
     };
     let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
       label: Some("Shader"),
-      source: wgpu::ShaderSource::Wgsl(include_str!("shader-buffer.wgsl").into())
+      source: wgpu::ShaderSource::Wgsl(include_str!("texture.wgsl").into())
     });
     let shader2 = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
       label: Some("Shader"),
       source: wgpu::ShaderSource::Wgsl(include_str!("test2.wgsl").into())
     });
+    let diffuse_texture = texture::Texture::default(&device, &queue).unwrap();
+    let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+      label: Some("texture_bind_group_layout"),
+      entries: &[
+        wgpu::BindGroupLayoutEntry {
+          binding: 0,
+          visibility: wgpu::ShaderStages::FRAGMENT,
+          ty: wgpu::BindingType::Texture {
+            multisampled: false,
+            view_dimension: wgpu::TextureViewDimension::D2,
+            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+          },
+          count: None
+        },
+        wgpu::BindGroupLayoutEntry {
+          binding: 1,
+          visibility: wgpu::ShaderStages::FRAGMENT,
+          ty: wgpu::BindingType::Sampler(
+            // SamplerBindingType::Comparison is only for TextureSampleType::Depth
+            // SamplerBindingType::Filtering if the sample_type of the texture is:
+            //     TextureSampleType::Float { filterable: true }
+            // Otherwise you'll get an error.
+            wgpu::SamplerBindingType::Filtering,
+          ),
+          count: None,
+        }
+      ]
+    });
+    let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+      label: Some("texture_bind_group"),
+      layout: &texture_bind_group_layout,
+      entries: &[
+        wgpu::BindGroupEntry {
+          binding: 0,
+          resource: wgpu::BindingResource::TextureView(&diffuse_texture.view)
+        },
+        wgpu::BindGroupEntry {
+          binding: 1,
+          resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler)
+        }
+      ]
+    });
     let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
       label: Some("Render Pipeline Layout"),
-      bind_group_layouts: &[],
+      bind_group_layouts: &[&texture_bind_group_layout],
       push_constant_ranges: &[]
     });
     let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -145,7 +188,7 @@ impl State {
       },
       multiview: None
     });
-    let buffer_info = get_circle(16, 0.5, size.width as f32 / size.height as f32);
+    let buffer_info = get_circle(32, 0.8, size.width as f32 / size.height as f32);
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
       label: Some("Vertex Buffer"),
       usage: wgpu::BufferUsages::VERTEX,
@@ -157,48 +200,6 @@ impl State {
       contents: bytemuck::cast_slice(&buffer_info.indices),
     });
     surface.configure(&device, &config); // 初始化时一定要进行配置
-    let diffuse_texture = texture::Texture::default(&device, &queue).unwrap();
-    let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-      label: Some("texture_bind_group_layout"),
-      entries: &[
-        wgpu::BindGroupLayoutEntry {
-          binding: 0,
-          visibility: wgpu::ShaderStages::FRAGMENT,
-          ty: wgpu::BindingType::Texture {
-            multisampled: false,
-            view_dimension: wgpu::TextureViewDimension::D2,
-            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-          },
-          count: None
-        },
-        wgpu::BindGroupLayoutEntry {
-          binding: 1,
-          visibility: wgpu::ShaderStages::FRAGMENT,
-          ty: wgpu::BindingType::Sampler(
-            // SamplerBindingType::Comparison is only for TextureSampleType::Depth
-            // SamplerBindingType::Filtering if the sample_type of the texture is:
-            //     TextureSampleType::Float { filterable: true }
-            // Otherwise you'll get an error.
-            wgpu::SamplerBindingType::Filtering,
-          ),
-          count: None,
-        }
-      ]
-    });
-    let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-      label: Some("texture_bind_group"),
-      layout: &texture_bind_group_layout,
-      entries: &[
-        wgpu::BindGroupEntry {
-          binding: 0,
-          resource: wgpu::BindingResource::TextureView(&diffuse_texture.view)
-        },
-        wgpu::BindGroupEntry {
-          binding: 1,
-          resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler)
-        }
-      ]
-    });
     State {
       size,
       surface,
@@ -211,7 +212,8 @@ impl State {
       render_pipeline_default: true,
       vertex_buffer,
       index_buffer,
-      index_num: buffer_info.indices.len() as u32
+      index_num: buffer_info.indices.len() as u32,
+      texture_bind_group
     }
   }
 
@@ -282,6 +284,7 @@ impl State {
       } else {
         &self.render_pipeline2
       }); // 根据状态切换渲染管线
+      render_pass.set_bind_group(0, &self.texture_bind_group, &[]); // 绑定到group中
       render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
       render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16); // 指定索引缓冲
       render_pass.draw_indexed(0..self.index_num, 0, 0..1); // 指定顶点数和实例数
