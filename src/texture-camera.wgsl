@@ -9,16 +9,23 @@ struct VertexOutput {
   [[location(0)]] uv: vec2<f32>;
 };
 
+struct CameraUnifrom {
+  view_projection: mat4x4<f32>;
+};
+
+[[group(1), binding(0)]]
+var<uniform> camera: CameraUnifrom;
+
 [[stage(vertex)]]
 fn vs_main(inputData: VertexInput) -> VertexOutput {
   var outputData: VertexOutput;
-  outputData.clip_position = vec4<f32>(inputData.position, 1.0);
+  outputData.clip_position = camera.view_projection * vec4<f32>(inputData.position, 1.0);
   outputData.uv = inputData.uv;
   return outputData;
 }
 
 [[group(0), binding(0)]]
-var texture_t: texture_2d<f32>; // 实际上就是绑定为uniform
+var texture_t: texture_2d<f32>;
 [[group(0), binding(1)]]
 var texture_s: sampler;
 

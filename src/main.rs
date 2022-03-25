@@ -1,5 +1,6 @@
 mod shape;
 mod texture;
+mod camera;
 
 use winit::{
   event::*,
@@ -11,6 +12,10 @@ use wgpu::util::DeviceExt;
 use shape::{
   Vertex,
   get_circle
+};
+use camera::{
+  Camera,
+  CameraInfo
 };
 
 struct State {
@@ -26,11 +31,13 @@ struct State {
   vertex_buffer: wgpu::Buffer,
   index_buffer: wgpu::Buffer,
   index_num: u32,
-  texture_bind_group: wgpu::BindGroup
+  texture_bind_group: wgpu::BindGroup,
+  camera: Camera,
+  camera_info: CameraInfo,
 }
 
 // const VERTICES: &[Vertex] = &[
-//   Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },
+//   Vertex { position: [0.0, 0.5, 0.0], color: [1.10, 0.0, 0.0] },
 //   Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] },
 //   Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },
 // ];
@@ -57,6 +64,16 @@ impl State {
       height: size.height,
       present_mode: wgpu::PresentMode::Fifo,
     };
+    let camera = Camera {
+      eye: (0.0, 1.0, 2.0).into(), // TOKNOW: into的机制是什么
+      lookat: (0.0, 0.0, 0.0).into(),
+      up: cgmath::Vector3::unit_y(),
+      aspect: config.width as f32 / config.height as f32,
+      fov: 45.0,
+      near: 0.1,
+      far: 1000.0
+    };
+    let camera_info = CameraInfo::new(&camera, &device);
     let background = wgpu::Color {
       r: 1.0,
       g: 0.0,
@@ -65,7 +82,7 @@ impl State {
     };
     let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
       label: Some("Shader"),
-      source: wgpu::ShaderSource::Wgsl(include_str!("texture.wgsl").into())
+      source: wgpu::ShaderSource::Wgsl(include_str!("texture-camera.wgsl").into())
     });
     let shader2 = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
       label: Some("Shader"),
@@ -115,7 +132,10 @@ impl State {
     });
     let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
       label: Some("Render Pipeline Layout"),
-      bind_group_layouts: &[&texture_bind_group_layout],
+      bind_group_layouts: &[
+        &texture_bind_group_layout,
+        &camera_info.layout
+      ],
       push_constant_ranges: &[]
     });
     let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -188,7 +208,7 @@ impl State {
       },
       multiview: None
     });
-    let buffer_info = get_circle(32, 0.8, size.width as f32 / size.height as f32);
+    let buffer_info = get_circle(64, 0.4, size.width as f32 / size.height as f32);
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
       label: Some("Vertex Buffer"),
       usage: wgpu::BufferUsages::VERTEX,
@@ -213,7 +233,9 @@ impl State {
       vertex_buffer,
       index_buffer,
       index_num: buffer_info.indices.len() as u32,
-      texture_bind_group
+      texture_bind_group,
+      camera,
+      camera_info
     }
   }
 
@@ -285,6 +307,7 @@ impl State {
         &self.render_pipeline2
       }); // 根据状态切换渲染管线
       render_pass.set_bind_group(0, &self.texture_bind_group, &[]); // 绑定到group中
+      render_pass.set_bind_group(1, &self.camera_info.group, &[]);
       render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
       render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16); // 指定索引缓冲
       render_pass.draw_indexed(0..self.index_num, 0, 0..1); // 指定顶点数和实例数
