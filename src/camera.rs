@@ -1,5 +1,8 @@
 use cgmath::SquareMatrix;
 use wgpu::util::DeviceExt;
+use winit::{
+  event::*
+};
 
 /// 相机
 pub struct Camera {
@@ -21,10 +24,15 @@ pub struct CameraUniform {
 }
 
 pub struct CameraInfo {
-  uniform: CameraUniform,
-  buffer: wgpu::Buffer,
+  pub uniform: CameraUniform,
+  pub buffer: wgpu::Buffer,
   pub group: wgpu::BindGroup,
   pub layout: wgpu::BindGroupLayout
+}
+
+pub struct CameraController<'a> {
+  camera: &'a mut Camera,
+  info: &'a mut CameraInfo,
 }
 
 /// 用于将openGL NDC（标准化设备坐标）中的z从[-1, 1]映射到[0, 1]（Vulkan和Metal）
@@ -43,6 +51,20 @@ impl Camera {
 
     OPENGL_TO_WGPU_MATRIX * projection * view
   }
+
+  /// 将相机位置围绕`lookat`旋转
+  pub fn rotate(&mut self, delta_angle: f32) {
+    let rotate_matrix = cgmath::Matrix4::from_axis_angle(cgmath::Vector3::unit_y(), cgmath::Deg(delta_angle)); // 获取旋转矩阵
+    let next_pos = rotate_matrix * self.eye.to_homogeneous();
+    self.eye = cgmath::Point3::from_homogeneous(next_pos);
+  }
+
+  /// 将相机位置沿着视线方向进行移动
+  pub fn move_line(&mut self, delta_dist: f32) {
+    let move_dir = cgmath::InnerSpace::normalize(self.eye - self.lookat);
+    let delta = move_dir * delta_dist;
+    self.eye += delta;
+  }
 }
 
 impl CameraUniform {
@@ -58,7 +80,7 @@ impl CameraUniform {
 }
 
 impl CameraInfo {
-  pub fn new(camera: &Camera, device: &wgpu::Device) -> Self {
+  fn get_info(camera: &Camera, device: &wgpu::Device) -> Self {
     let mut uniform = CameraUniform::new();
     uniform.update_matrix(camera);
     let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -96,6 +118,62 @@ impl CameraInfo {
       buffer,
       layout,
       group,
+    }
+  }
+
+  pub fn update_info(& mut self, camera: &Camera, device: &wgpu::Device) {
+    let info = CameraInfo::get_info(camera, device);
+    self.buffer = info.buffer;
+    self.group = info.group;
+    self.layout = info.layout;
+    self.uniform = info.uniform;
+  }
+
+  pub fn new(camera: &Camera, device: &wgpu::Device) -> Self {
+    CameraInfo::get_info(camera, device)
+  }
+}
+
+impl<'a> CameraController<'a> {
+  pub fn new(camera: &'a mut Camera, info: &'a mut CameraInfo) -> Self {
+    Self {
+      camera,
+      info,
+    }
+  }
+
+  pub fn watch_event(&self, event: &WindowEvent) -> bool {
+    match event {
+      WindowEvent::KeyboardInput {
+        input: KeyboardInput {
+          state: ElementState::Pressed,
+          virtual_keycode: Some(VirtualKeyCode::Left), // 左方向
+          ..
+        },
+        ..
+      } => {
+        true
+      },
+      WindowEvent::KeyboardInput {
+        input: KeyboardInput {
+          state: ElementState::Pressed,
+          virtual_keycode: Some(VirtualKeyCode::Right), // 右方向
+          ..
+        },
+        ..
+      } => {
+        true
+      },
+      WindowEvent::MouseWheel { // 鼠标滚动
+        delta,
+        phase,
+        ..
+      } => {
+        println!("{:#?}", delta);
+        println!("{:#?}", phase);
+        true
+      },
+      _ => false
     }
   }
 }

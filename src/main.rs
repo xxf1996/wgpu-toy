@@ -248,6 +248,50 @@ impl State {
     }
   }
 
+  fn update_camera(&mut self) {
+    self.camera_info.update_info(&self.camera, &self.device);
+    self.queue.write_buffer(&self.camera_info.buffer, 0, bytemuck::cast_slice(&[self.camera_info.uniform]));
+  }
+
+  fn camera_control(&mut self, event: &WindowEvent) -> bool {
+    match event {
+      WindowEvent::KeyboardInput {
+        input: KeyboardInput {
+          state: ElementState::Pressed,
+          virtual_keycode: Some(VirtualKeyCode::Left), // 左方向（逆时针）
+          ..
+        },
+        ..
+      } => {
+        self.camera.rotate(-0.2);
+        true
+      },
+      WindowEvent::KeyboardInput {
+        input: KeyboardInput {
+          state: ElementState::Pressed,
+          virtual_keycode: Some(VirtualKeyCode::Right), // 右方向（顺时针）
+          ..
+        },
+        ..
+      } => {
+        self.camera.rotate(0.2);
+        true
+      },
+      WindowEvent::MouseWheel { // 鼠标滚动（向上滚动为拉近，向下滚动为拉远）
+        delta,
+        // phase,
+        ..
+      } => {
+        if let MouseScrollDelta::LineDelta(_x, y) = delta {
+          println!("MouseWheel {:#?}", y);
+          self.camera.move_line(*y * -0.05);
+        }
+        true
+      },
+      _ => false
+    }
+  }
+
   pub fn input(&mut self, event: &WindowEvent) -> bool {
     match event {
       WindowEvent::CursorMoved {
@@ -274,7 +318,14 @@ impl State {
         self.render_pipeline_default = !self.render_pipeline_default; // 切换渲染管线状态
         true
       },
-      _ => false
+      _ => {
+        let camera_state = self.camera_control(event);
+        if camera_state {
+          println!("update camera");
+          self.update_camera();
+        }
+        camera_state || false
+      }
     }
   }
 
