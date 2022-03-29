@@ -1,3 +1,5 @@
+use std::mem;
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
@@ -9,7 +11,7 @@ pub struct Vertex {
 impl Vertex {
   pub fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
     wgpu::VertexBufferLayout {
-      array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+      array_stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
       step_mode: wgpu::VertexStepMode::Vertex,
       attributes: &[
         wgpu::VertexAttribute {
@@ -18,16 +20,74 @@ impl Vertex {
           format: wgpu::VertexFormat::Float32x3,
         }, // position
         wgpu::VertexAttribute {
-          offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+          offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
           shader_location: 1,
           format: wgpu::VertexFormat::Float32x3,
         }, // color
         wgpu::VertexAttribute {
-          offset: std::mem::size_of::<[f32; 6]>() as wgpu::BufferAddress,
+          offset: mem::size_of::<[f32; 6]>() as wgpu::BufferAddress,
           shader_location: 2,
           format: wgpu::VertexFormat::Float32x2,
         }, // uv
       ]
+    }
+  }
+}
+
+/// 实例数据；
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct InstanceData {
+  /// 实例自身model_matrix
+  pub model_matrix: [[f32; 4]; 4],
+}
+
+impl InstanceData {
+  pub fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
+    // 将4x4的矩阵拆分为4个行向量；webGPU不支持传送4x4的attribute变量？
+    wgpu::VertexBufferLayout {
+      array_stride: mem::size_of::<InstanceData>() as wgpu::BufferAddress,
+      step_mode: wgpu::VertexStepMode::Instance,
+      attributes: &[
+        wgpu::VertexAttribute {
+          offset: 0,
+          shader_location: 3,
+          format: wgpu::VertexFormat::Float32x4,
+        },
+        wgpu::VertexAttribute {
+          offset: mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+          shader_location: 4,
+          format: wgpu::VertexFormat::Float32x4,
+        },
+        wgpu::VertexAttribute {
+          offset: mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
+          shader_location: 5,
+          format: wgpu::VertexFormat::Float32x4,
+        },
+        wgpu::VertexAttribute {
+          offset: mem::size_of::<[f32; 12]>() as wgpu::BufferAddress,
+          shader_location: 6,
+          format: wgpu::VertexFormat::Float32x4,
+        }
+      ]
+    }
+  }
+}
+
+/// 物体实例所需信息，实际上就是构成model matrix
+pub struct Instance {
+  /// 物体中心位置
+  pub center: cgmath::Vector3<f32>,
+  /// 物体旋转四元量
+  pub rotation: cgmath::Quaternion<f32>
+}
+
+impl Instance {
+  /// 获取实例数据；
+  pub fn get_data(&self) -> InstanceData {
+    let model_matrix = cgmath::Matrix4::from_translation(self.center) * cgmath::Matrix4::from(self.rotation);
+    InstanceData {
+      model_matrix: model_matrix.into()
     }
   }
 }

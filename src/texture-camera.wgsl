@@ -4,6 +4,13 @@ struct VertexInput {
   [[location(2)]] uv: vec2<f32>;
 };
 
+struct InstanceInput {
+  [[location(3)]] model_0: vec4<f32>;
+  [[location(4)]] model_1: vec4<f32>;
+  [[location(5)]] model_2: vec4<f32>;
+  [[location(6)]] model_3: vec4<f32>;
+};
+
 struct VertexOutput {
   [[builtin(position)]] clip_position: vec4<f32>;
   [[location(0)]] uv: vec2<f32>;
@@ -17,9 +24,15 @@ struct CameraUnifrom {
 var<uniform> camera: CameraUnifrom;
 
 [[stage(vertex)]]
-fn vs_main(inputData: VertexInput) -> VertexOutput {
+fn vs_main(inputData: VertexInput, instanceData: InstanceInput) -> VertexOutput {
   var outputData: VertexOutput;
-  outputData.clip_position = camera.view_projection * vec4<f32>(inputData.position, 1.0);
+  let model_matrix = mat4x4<f32>(
+    instanceData.model_0,
+    instanceData.model_1,
+    instanceData.model_2,
+    instanceData.model_3
+  );
+  outputData.clip_position = camera.view_projection * model_matrix * vec4<f32>(inputData.position, 1.0);
   outputData.uv = inputData.uv;
   return outputData;
 }

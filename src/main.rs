@@ -8,10 +8,13 @@ use winit::{
   window::WindowBuilder,
   window::Window,
 };
+use cgmath::prelude::*;
 use wgpu::util::DeviceExt;
 use shape::{
   Vertex,
-  get_circle
+  get_circle,
+  Instance,
+  InstanceData
 };
 use camera::{
   Camera,
@@ -34,13 +37,34 @@ struct State {
   texture_bind_group: wgpu::BindGroup,
   camera: Camera,
   camera_info: CameraInfo,
+  instances: Vec<Instance>,
+  instance_buffer: wgpu::Buffer
 }
 
-// const VERTICES: &[Vertex] = &[
-//   Vertex { position: [0.0, 0.5, 0.0], color: [1.10, 0.0, 0.0] },
-//   Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] },
-//   Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },
-// ];
+const INSTANCE_RANGE: std::ops::Range<i8> = -5..6;
+
+fn get_instances() -> Vec<Instance> {
+  // flat_map应该就是map之后应用flat？
+  let instances = INSTANCE_RANGE.flat_map(|z| {
+    INSTANCE_RANGE.map(move |x| {
+      let center = cgmath::Vector3 {
+        x: x as f32,
+        y: 0.0,
+        z: z as f32
+      };
+      let rotation: cgmath::Quaternion<f32> = if center.is_zero() {
+        cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0))
+      } else {
+        cgmath::Quaternion::from_axis_angle(center.normalize(), cgmath::Deg(45.0))
+      };
+      Instance {
+        center,
+        rotation
+      }
+    })
+  });
+  instances.collect::<Vec<_>>()
+}
 
 impl State {
   pub async fn new(window: &Window) -> Self {
@@ -65,7 +89,7 @@ impl State {
       present_mode: wgpu::PresentMode::Fifo,
     };
     let camera = Camera {
-      eye: (0.0, 1.0, 2.0).into(), // TOKNOW: into的机制是什么
+      eye: (-1.0, 1.0, 3.0).into(), // TOKNOW: into的机制是什么
       lookat: (0.0, 0.0, 0.0).into(),
       up: cgmath::Vector3::unit_y(),
       aspect: config.width as f32 / config.height as f32,
@@ -145,7 +169,8 @@ impl State {
         module: &shader,
         entry_point: "vs_main",
         buffers: &[
-          Vertex::desc()
+          Vertex::desc(),
+          InstanceData::desc()
         ]
       },
       fragment: Some(wgpu::FragmentState {
@@ -219,6 +244,13 @@ impl State {
       usage: wgpu::BufferUsages::INDEX,
       contents: bytemuck::cast_slice(&buffer_info.indices),
     });
+    let instances = get_instances();
+    let instance_data = instances.iter().map(Instance::get_data).collect::<Vec<_>>();
+    let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+      label: Some("Instance Buffer"),
+      usage: wgpu::BufferUsages::VERTEX,
+      contents: bytemuck::cast_slice(&instance_data),
+    });
     surface.configure(&device, &config); // 初始化时一定要进行配置
     State {
       size,
@@ -235,7 +267,9 @@ impl State {
       index_num: buffer_info.indices.len() as u32,
       texture_bind_group,
       camera,
-      camera_info
+      camera_info,
+      instances,
+      instance_buffer
     }
   }
 
@@ -253,6 +287,11 @@ impl State {
     self.queue.write_buffer(&self.camera_info.buffer, 0, bytemuck::cast_slice(&[self.camera_info.uniform]));
   }
 
+  fn update_instance(&mut self) {
+
+  }
+
+  /// 相机控制（事件处理）
   fn camera_control(&mut self, event: &WindowEvent) -> bool {
     match event {
       WindowEvent::KeyboardInput {
@@ -360,8 +399,9 @@ impl State {
       render_pass.set_bind_group(0, &self.texture_bind_group, &[]); // 绑定到group中
       render_pass.set_bind_group(1, &self.camera_info.group, &[]);
       render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+      render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
       render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16); // 指定索引缓冲
-      render_pass.draw_indexed(0..self.index_num, 0, 0..1); // 指定顶点数和实例数
+      render_pass.draw_indexed(0..self.index_num, 0, 0..(self.instances.len() as u32)); // 指定顶点数和实例数
     }
 
     self.queue.submit(std::iter::once(encoder.finish()));
